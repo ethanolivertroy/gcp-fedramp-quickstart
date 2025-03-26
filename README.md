@@ -1,22 +1,35 @@
-# Google Cloud FedRAMP aligned "Three Tier Workload"
+# Google Cloud FedRAMP aligned "Three Tier Workload" - Updated 2025
 
 <img width="835" alt="FedRAMP Aligned Three-Tier Architecture on GCP" src="https://user-images.githubusercontent.com/56096409/118192016-5ab5ec80-b3fa-11eb-89e0-39e7803756bc.jpg">
 
-The three-tier architecture can be used to deploy a web-based application on Google Cloud. The entire architecture is deployed as two projects using [Cloud Data Protection Toolkit](https://github.com/GoogleCloudPlatform/healthcare-data-protection-suite).  
+The three-tier architecture can be used to deploy a secure web-based application on Google Cloud that complies with FedRAMP requirements. The entire architecture is deployed as two projects using [Cloud Data Protection Toolkit](https://github.com/GoogleCloudPlatform/healthcare-data-protection-suite) with modern security controls and compliance best practices.
+
+## What's New in 2025 Update
+* Updated to use latest Terraform 1.7+ and Go 1.20+ compatibility
+* Enhanced security with Zero Trust architecture principles
+* Confidential Computing VM configurations
+* Support for FedRAMP High workloads
+* Modernized GKE configuration with Workload Identity
+* Improved Cloud SQL configuration with high availability
+* Container security scanning integration
+* Infrastructure as Code validation
+* SBOM (Software Bill of Materials) creation process
+* Enhanced logging and monitoring for compliance
 
 ## Documentation
-* [Quickstart](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#quickstart)
-* [Prerequisites](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#prerequisites)
-  * [Access Control](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#access-control)
-* [Deployment Phases](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#deployment-phases)
-  * [Clone the repository](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#clone-the-repository)
-  * [Update the variables in HCL files](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#update-the-variables-in-hcl-files)
-  * [Generate terraform files](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#generate-terraform-files)
-  * [Architecure deployment using terraform](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#architecture-deployment-using-terraform)
-* [Architecture diagram](https://github.com/zealsomani/gcp-fedramp-quickstart/blob/main/Architecture/FedRAMP%20Aligned%20three-tier%20architecture%20on%20Google%20Cloud.jpg) 
-* [Use case description and user considerations](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/Architecture/Three-Tier%20Architecture%20Use%20Case%20Description.md) 
-* [HCL files](https://github.com/zealsomani/gcp-fedramp-quickstart/blob/main/README.md#hcl-files)
-* [Useful FedRAMP links](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart/blob/master/README.md#useful-fedramp-linkss)
+* [Quickstart](#quickstart)
+* [Prerequisites](#prerequisites)
+  * [Access Control](#access-control)
+* [Deployment Phases](#deployment-phases)
+  * [Clone the repository](#clone-the-repository)
+  * [Update the variables in HCL files](#update-the-variables-in-hcl-files)
+  * [Generate terraform files](#generate-terraform-files)
+  * [Architecture deployment using terraform](#architecture-deployment-using-terraform)
+* [Architecture diagram](./Architecture/FedRAMP%20Aligned%20Three-Tier%20Architecture%20on%20GCP.PNG) 
+* [Use case description and user considerations](./Architecture/Three-Tier%20Architecture%20Use%20Case%20Description.md) 
+* [HCL files](#hcl-files)
+* [Security and Compliance](#security-and-compliance)
+* [Useful FedRAMP links](#useful-fedramp-links)
 
 ## Quickstart
 
@@ -34,10 +47,10 @@ Run the [Data Protection Toolkit](https://github.com/GoogleCloudPlatform/healthc
 
 Before you run the toolkit locally, install the following tools:
 
-* [Go (1.14+)](https://golang.org/doc/go1.14) - an open source programming language to build software.
+* [Go (1.20+)](https://golang.org/doc/install) - an open source programming language to build software.
 * [Cloud SDK](https://cloud.google.com/sdk/install) - a set of tools for managing resources and applications hosted on Google Cloud.
 * [Git](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git) - a distributed version control system.
-* [Terraform (0.14.4+)](https://www.terraform.io/downloads.html) - a cloud provisioning tool.
+* [Terraform (1.7+)](https://www.terraform.io/downloads.html) - a cloud provisioning tool.
 * [Google Workspaces](https://workspace.google.com/) or [Cloud Identity](https://cloud.google.com/identity/docs/overview) - Privileges to modify users and groups in Google Workspaces or Cloud Identity.
 * [Google Cloud Organization](https://cloud.google.com/resource-manager/docs/creating-managing-organization) - A Google Cloud organization with [Billing Account](https://cloud.google.com/billing/docs)
 * A domain purchased from a Domain registrar (example: Google Domains).
@@ -76,7 +89,7 @@ The user groups running the template (org-admins group) should have the followin
 
 Data Protection Toolkit deploys resources on [Google Assured Workload](https://cloud.google.com/assured-workloads) projects, however, the toolkit does not create these projects for Assured Workloads. Hence, before deploying the toolkit, the user must create two FedRAMP moderate assured workloads (one for three tier workload and one for logging project) using console or gcloud. Refer to this [Create a new workload environment](https://cloud.google.com/assured-workloads/docs/how-to-create-workload) link.
 
-**Note: Create Assured workloads in regions where N2D machine type is supported. Refer to [Regions and zones](https://cloud.google.com/compute/docs/regions-zones) to see which regions support N2D machine type.**
+**Note: Create Assured workloads in regions with appropriate machine types for your security requirements. For Confidential Computing, use regions supporting C3 machine types. Refer to [Regions and zones](https://cloud.google.com/compute/docs/regions-zones).**
 
 
 ### Clone the repository
@@ -294,9 +307,39 @@ $ terraform init
 $ terraform apply
 ```
 
+## Security and Compliance
+
+### Zero Trust Security Model
+
+This architecture implements several key Zero Trust security principles:
+
+1. **Least privilege access** - IAM roles are configured to provide minimal permissions needed
+2. **Secure network architecture** - Private GKE cluster, Cloud SQL with private connectivity
+3. **Micro-segmentation** - Firewall rules restrict communication between tiers
+4. **Strong authentication** - Service accounts with fine-grained permissions
+5. **Continuous monitoring** - Centralized logging and audit trails
+
+### Confidential Computing
+
+The VM instances are configured to use Confidential Computing, which:
+- Encrypts data in use with hardware-based trusted execution environments
+- Reduces the attack surface by isolating workloads
+- Complements encryption at rest and in transit for complete data protection
+
+### Security Controls
+
+The deployment implements the following security controls:
+
+1. **Cloud Armor** with WAF capabilities for protection against OWASP Top 10 vulnerabilities
+2. **Private Google Access** for all internal components
+3. **VPC Service Controls** to create security perimeters
+4. **Customer-managed encryption keys (CMEK)** for sensitive data
+5. **Binary Authorization** for GKE to ensure only trusted containers run
+
 ## Useful FedRAMP links
 
 * [Google Cloud Platform supports FedRAMP compliance](https://cloud.google.com/security/compliance/fedramp/), and provides specific details on the approach to security and data protection in the [Google security whitepaper](https://cloud.google.com/security/overview/whitepaper/) and in the [Google Infrastructure Security Design Overview.](https://cloud.google.com/security/infrastructure/design/)
 * To learn more about Google Cloud's Shared Responsibility Model, refer to the [Google Infrastructure Security Design Overview.](https://cloud.google.com/security/infrastructure/design/)
 * Refer to the [FedRAMP Shared Security Model](https://cloud.google.com/assured-workloads/docs/concept-fedramp-moderate) and [Google Cloud FedRAMP Implementation Guide.](https://cloud.google.com/security/compliance/fedramp-guide) for additional guidance on FedRAMP shared responsibilities for Google Cloud Platform.
 * For details on Google Cloud services covered by FedRAMP, refer to the [FedRAMP Marketplace](https://cloud.google.com/security/compliance/fedramp) by Google.
+* For the latest on Zero Trust architecture principles for FedRAMP compliance, see [NIST Special Publication 800-207](https://nvlpubs.nist.gov/nistpubs/SpecialPublications/NIST.SP.800-207.pdf)
