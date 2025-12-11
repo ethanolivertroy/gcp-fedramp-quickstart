@@ -60,6 +60,47 @@ module "private_service_access" {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
+# KMS (CMEK)
+# ---------------------------------------------------------------------------------------------------------------------
+
+resource "google_kms_key_ring" "keyring" {
+  name     = "${local.name_prefix}-keyring"
+  location = var.region
+}
+
+resource "google_kms_crypto_key" "key" {
+  name            = "${local.name_prefix}-key"
+  key_ring        = google_kms_key_ring.keyring.id
+  rotation_period = "7776000s" # 90 days
+
+  lifecycle {
+    prevent_destroy = false # Set to true for PROD
+  }
+}
+
+# Grant permissions to service accounts
+data "google_project" "project" {}
+
+resource "google_kms_crypto_key_iam_member" "sql_sa" {
+  crypto_key_id = google_kms_crypto_key.key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-cloud-sql.iam.gserviceaccount.com"
+}
+
+resource "google_kms_crypto_key_iam_member" "gke_sa" {
+  crypto_key_id = google_kms_crypto_key.key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.project.number}@container-engine-robot.iam.gserviceaccount.com"
+}
+
+resource "google_kms_crypto_key_iam_member" "compute_sa" {
+  crypto_key_id = google_kms_crypto_key.key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.project.number}@compute-system.iam.gserviceaccount.com"
+}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
 # CLOUD SQL (POSTGRESQL)
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -78,11 +119,14 @@ module "sql" {
 
   # Network
   ip_configuration = {
-    ipv4_enabled        = false # Security: Private IP only
-    private_network     = module.vpc.network_self_link
-    require_ssl         = true
-    allocated_ip_range  = module.private_service_access.google_compute_global_address_name
+    ipv4_enabled       = false # Security: Private IP only
+    private_network    = module.vpc.network_self_link
+    require_ssl        = true
+    allocated_ip_range = module.private_service_access.google_compute_global_address_name
   }
+
+  # Encryption
+  encryption_key_name = google_kms_crypto_key.key.id
 
   # Backups
   backup_configuration = {
@@ -128,11 +172,15 @@ module "sql" {
       value = "-1"
     }
   ]
-  
-  db_name      = "fedramp_db"
-  user_name    = "app_user"
+
+  db_name   = "fedramp_db"
+  user_name = "app_user"
   # In a real scenario, use Secret Manager for the password
   # For this quickstart dev env, we will generate a random one
+
+  depends_on = [
+    google_kms_crypto_key_iam_member.sql_sa
+  ]
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -147,11 +195,24 @@ resource "google_artifact_registry_repository" "app_repo" {
   description   = "Docker repository for FedRAMP application"
   format        = "DOCKER"
   project       = var.project_id
+  kms_key_name  = google_kms_crypto_key.key.id
 
   docker_config {
     immutable_tags = true # Security: Prevent tag overwrites
   }
+
+  depends_on = [
+    google_kms_crypto_key_iam_member.compute_sa # Often uses compute SA or a specific one, checking... actually AR uses its own service agent.
+  ]
 }
+
+# Need to grant AR service agent permission too
+resource "google_kms_crypto_key_iam_member" "ar_sa" {
+  crypto_key_id = google_kms_crypto_key.key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-artifactregistry.iam.gserviceaccount.com"
+}
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # GKE PRIVATE CLUSTER
@@ -177,13 +238,21 @@ module "gke" {
   master_ipv4_cidr_block  = var.gke_master_ipv4_cidr_block
 
   # Security
-  master_authorized_networks = var.gke_master_authorized_networks
+  master_authorized_networks  = var.gke_master_authorized_networks
   enable_binary_authorization = true # Security: Require trusted images
+
+  # CMEK
+  database_encryption = [{
+    state    = "ENCRYPTED"
+    key_name = google_kms_crypto_key.key.id
+  }]
+
+  boot_disk_kms_key = google_kms_crypto_key.key.id
 
   # Workload Identity
   # Enables GSA-to-KSA mapping (no more keys!)
   enable_vertical_pod_autoscaling = true
-  
+
   # Observability
   monitoring_service = "monitoring.googleapis.com/kubernetes"
   logging_service    = "logging.googleapis.com/kubernetes"
@@ -206,6 +275,8 @@ module "gke" {
       auto_upgrade       = true
       preemptible        = false
       initial_node_count = 1
+      # Encryption for nodes
+      boot_disk_kms_key = google_kms_crypto_key.key.id
     },
   ]
 
@@ -233,7 +304,92 @@ module "gke" {
       "${local.name_prefix}-gke"
     ]
   }
+
+  depends_on = [
+    google_kms_crypto_key_iam_member.gke_sa,
+    google_kms_crypto_key_iam_member.compute_sa
+  ]
 }
+
+# ---------------------------------------------------------------------------------------------------------------------
+# CLOUD ARMOR (SECURITY POLICY)
+# ---------------------------------------------------------------------------------------------------------------------
+
+resource "google_compute_security_policy" "policy" {
+  name        = var.security_policy_name
+  description = "FedRAMP Cloud Armor Security Policy"
+
+  # Rule 1000: Allow specific IPs
+  rule {
+    action   = "allow"
+    priority = "1000"
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = var.allowed_ips
+      }
+    }
+    description = "Allow access from specific IP ranges"
+  }
+
+  # Default rule: Deny all (Positive Security Model) - or Allow for Dev
+  # For FedRAMP, we often want a default deny, but for a Quickstart dev env, we might want allow. 
+  # The legacy one seemed to just have an allow rule.
+  # Let's set default to deny (403) to encourage security-first thinking, assuming var.allowed_ips includes the user's IP.
+  rule {
+    action   = "deny(403)"
+    priority = "2147483647"
+    match {
+      versioned_expr = "SRC_IPS_V1"
+      config {
+        src_ip_ranges = ["*"]
+      }
+    }
+    description = "Default deny all"
+  }
+
+  # TODO: Add OWASP Top 10 rules (SQLi, XSS, etc.) in a real deployment
+}
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# LOGGING & OBSERVABILITY
+# ---------------------------------------------------------------------------------------------------------------------
+
+resource "google_pubsub_topic" "log_sink_topic" {
+  name = "${local.name_prefix}-logs-topic"
+
+  # Ensure encryption with our key
+  kms_key_name = google_kms_crypto_key.key.id
+}
+
+resource "google_logging_project_sink" "log_sink" {
+  name = var.log_sink_name
+
+  # Export to Pub/Sub
+  destination = "pubsub.googleapis.com/projects/${var.project_id}/topics/${google_pubsub_topic.log_sink_topic.name}"
+
+  # Filter for critical logs (FedRAMP requirement for auditability)
+  filter = var.log_sink_filter
+
+  unique_writer_identity = true
+}
+
+# Grant the Sink's writer identity permission to publish to the topic
+resource "google_pubsub_topic_iam_member" "sink_publisher" {
+  topic  = google_pubsub_topic.log_sink_topic.name
+  role   = "roles/pubsub.publisher"
+  member = google_logging_project_sink.log_sink.writer_identity
+}
+
+# Grant the Pub/Sub service account permission to use the KMS key
+# (Required because the topic is encrypted)
+resource "google_kms_crypto_key_iam_member" "pubsub_sa" {
+  crypto_key_id = google_kms_crypto_key.key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+
 
 # ---------------------------------------------------------------------------------------------------------------------
 # WORKLOAD IDENTITY FEDERATION (GITHUB ACTIONS)

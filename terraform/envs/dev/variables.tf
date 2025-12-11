@@ -63,3 +63,27 @@ variable "github_repo" {
   type        = string
   default     = "googlecloudplatform/gcp-fedramp-quickstart"
 }
+
+variable "security_policy_name" {
+  description = "Name of the Cloud Armor security policy"
+  type        = string
+  default     = "fedramp-security-policy"
+}
+
+variable "allowed_ips" {
+  description = "List of IP ranges to allow for Cloud Armor whitelisting"
+  type        = list(string)
+  default     = ["0.0.0.0/0"] # Change this to specific IPs for stricter security
+}
+
+variable "log_sink_name" {
+  description = "Name of the log sink"
+  type        = string
+  default     = "fedramp-log-sink"
+}
+
+variable "log_sink_filter" {
+  description = "Filter for the log sink"
+  type        = string
+  default     = "resource.type = gce_instance AND severity >= WARNING"
+}

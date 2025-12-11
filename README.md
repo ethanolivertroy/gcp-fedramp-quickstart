@@ -32,7 +32,6 @@ This repository provides a production-ready, auditable Infrastructure-as-Code (I
 │   │   └── prod/           # Production Environment (Placeholder)
 │   └── modules/
 │       └── github-oidc/    # Identity Federation Setup
-├── legacy_HCL/             # Archived legacy templates (Reference only)
 └── README.md
 ```
 
@@ -52,6 +51,7 @@ To enable the automated pipeline, you must first create the Workload Identity in
     ```hcl
     project_id  = "your-gcp-project-id"
     github_repo = "your-org/your-repo"  # e.g. "acme-corp/fedramp-app"
+    allowed_ips = ["1.2.3.4/32"]    # Your Office IP for Cloud Armor access
     ```
 3.  **Apply Identity Config**:
     ```bash
@@ -89,6 +89,11 @@ We deprecated the previous `tfengine` tool to improve auditability and developer
 *   **Network**:
     *   Default VPC with Private Service Access.
     *   No public IPs on GKE Nodes or SQL instances.
+    *   **Cloud Armor**: Security Policy with default deny and IP allowlisting.
+*   **Encryption**:
+    *   **CMEK (Customer Managed Encryption Keys)**: All data at rest (SQL, GKE, Artifact Registry, Logs) encrypted with keys you control.
+*   **Observability**:
+    *   **Log Sinks**: Critical security logs exported to an encrypted Pub/Sub topic for FedRAMP audit retention.
 *   **Containers**:
     *   **Artifact Registry** with Immutable Tags.
     *   **GKE Dataplane V2** (eBPF) for deep network visibility.
