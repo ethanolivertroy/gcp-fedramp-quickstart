@@ -1,5 +1,11 @@
 # Google Cloud FedRAMP Quickstart (2025 Edition)
 
+> **Note**: This is a **community-maintained** project, **NOT** an official Google Cloud Platform project.
+>
+> Originally forked from [GoogleCloudPlatform/gcp-fedramp-quickstart](https://github.com/GoogleCloudPlatform/gcp-fedramp-quickstart) (last updated April 2023). This version has been modernized with native Terraform, OIDC authentication, and enhanced security controls.
+>
+> Licensed under Apache 2.0. See [LICENSE](./LICENSE) for details.
+
 An automated, secure-by-default blueprint for deploying FedRAMP Moderate aligned workloads on Google Cloud.
 
 ![Status](https://img.shields.io/badge/Status-Modernized-green)
